@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interview System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        let candidate = "Trần Văn Minh,KT1";
+        let topic = "Kiểu dữ liệu trong Java";
+        let outline = []; // NEW: Mảng chứa outline
+        let currentQuestion = "";
+        let currentAudio = null;
+        let autoPlayEnabled = true;
+
+        // NEW: Function để manage outline tags
+        function addOutlineItem() {
+            const outlineInput = document.getElementById('outlineInput');
+            const outlineValue = outlineInput.value.trim();
+
+            if (outlineValue && !outline.includes(outlineValue)) {
+                outline.push(outlineValue);
+                updateOutlineTags();
+                outlineInput.value = '';
+            }
+        }
+
+        function removeOutlineItem(item) {
+            outline = outline.filter(o => o !== item);
+            updateOutlineTags();
+        }
+
+        function updateOutlineTags() {
+            const container = document.getElementById('outlineTags');
+            container.innerHTML = '';
+
+            outline.forEach(item => {
+                const tag = document.createElement('span');
+                tag.className = 'outline-tag';
+                tag.innerHTML = `
+                    ${item}
+                    <button type="button" class="outline-tag-remove" onclick="removeOutlineItem('${item}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                container.appendChild(tag);
+            });
+        }
+
+        // NEW: Quick add outline items for common topics
+        function addQuickOutline(items) {
+            items.forEach(item => {
+                if (!outline.includes(item)) {
+                    outline.push(item);
+                }
+            });
+            updateOutlineTags();
+        }
+
+        function setupQuickOutlines() {
+            const topicSelect = document.getElementById('topicInput');
+            const quickOutlinesDiv = document.getElementById('quickOutlines');
+
+            const outlinePresets = {
+                "Kiểu dữ liệu trong Java": [
+                    "Primitive types", "Reference types", "Autoboxing/Unboxing",
+                    "String", "Array", "Type conversion"
+                ],
+                "OOP trong Java": [
+                    "Encapsulation", "Inheritance", "Polymorphism",
+                    "Abstraction", "Interface", "Abstract class"
+                ],
+                "Collection Framework": [
+                    "List", "Set", "Map", "Queue",
+                    "Iterator", "Generics", "Comparable"
+                ],
+                "Exception Handling": [
+                    "Try-catch", "Throw/Throws", "Custom exceptions",
+                    "Checked vs Unchecked", "Finally block"
+                ],
+                "Multithreading": [
+                    "Thread class", "Runnable interface", "Synchronization",
+                    "Thread pool", "Concurrent collections"
+                ]
+            };
+
+            const currentTopic = topicSelect.value;
+            const presets = outlinePresets[currentTopic];
+
+            if (presets) {
+                quickOutlinesDiv.innerHTML = `
+                    <div class="quick-outline-section">
+                        <label>Gợi ý outline cho "${currentTopic}":</label>
+                        <button type="button" class="btn btn-outline btn-sm" onclick="addQuickOutline(['${presets.join("','")}'])">
+                            <i class="fas fa-plus"></i> Thêm tất cả
+                        </button>
+                        <div class="quick-outline-items">
+                            ${presets.map(item => `
+                                <button type="button" class="btn btn-outline btn-xs" onclick="addQuickOutline(['${item}'])">
+                                    ${item}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            } else {
+                quickOutlinesDiv.innerHTML = '';
+            }
+        }
+
+        // Audio control functions (giữ nguyên)
+        function playQuestionAudio(audioUrl) {
+            if (!audioUrl || !autoPlayEnabled) return;
+
+            try {
+                if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio = null;
+                }
+
+                currentAudio = new Audio(audioUrl);
+                currentAudio.volume = 0.8;
+
+                currentAudio.addEventListener('loadstart', () => {
+                    updateAudioStatus('loading');
+                });
+
+                currentAudio.addEventListener('canplay', () => {
+                    updateAudioStatus('ready');
+                });
+
+                currentAudio.addEventListener('play', () => {
+                    updateAudioStatus('playing');
+                });
+
+                currentAudio.addEventListener('pause', () => {
+                    updateAudioStatus('paused');
+                });
+
+                currentAudio.addEventListener('ended', () => {
+                    updateAudioStatus('ended');
+                });
+
+                currentAudio.addEventListener('error', (e) => {
+                    console.error('Audio error:', e);
+                    updateAudioStatus('error');
+                });
+
+                currentAudio.play().catch(e => {
+                    console.error('Error playing audio:', e);
+                    updateAudioStatus('error');
+                });
+
+            } catch (error) {
+                console.error('Error with audio:', error);
+                updateAudioStatus('error');
+            }
+        }
+
+        function toggleAudioPlayback() {
+            if (!currentAudio) return;
+
+            if (currentAudio.paused) {
+                currentAudio.play();
+            } else {
+                currentAudio.pause();
+            }
+        }
+
+        function stopAudio() {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                updateAudioStatus('stopped');
+            }
+        }
+
+        function toggleAutoPlay() {
+            autoPlayEnabled = !autoPlayEnabled;
+            const autoPlayBtn = document.getElementById('autoPlayBtn');
+            if (autoPlayBtn) {
+                autoPlayBtn.className = `btn btn-secondary ${autoPlayEnabled ? 'active' : ''}`;
+                autoPlayBtn.innerHTML = `<i class="fas fa-${autoPlayEnabled ? 'volume-up' : 'volume-mute'}"></i> ${autoPlayEnabled ? 'Tự động phát' : 'Tắt âm thanh'}`;
+            }
+        }
+
+        function updateAudioStatus(status) {
+            const audioControls = document.getElementById('audioControls');
+            const playBtn = document.getElementById('playBtn');
+            const audioStatus = document.getElementById('audioStatus');
+
+            if (!audioControls) return;
+
+            const statusMap = {
+                loading: { icon: 'spinner fa-spin', text: 'Đang tải...', color: '#ed8936' },
+                ready: { icon: 'play', text: 'Sẵn sàng', color: '#48bb78' },
+                playing: { icon: 'pause', text: 'Đang phát', color: '#4299e1' },
+                paused: { icon: 'play', text: 'Tạm dừng', color: '#718096' },
+                ended: { icon: 'redo', text: 'Kết thúc', color: '#48bb78' },
+                stopped: { icon: 'play', text: 'Đã dừng', color: '#718096' },
+                error: { icon: 'exclamation-triangle', text: 'Lỗi', color: '#f56565' }
+            };
+
+            const statusInfo = statusMap[status] || statusMap.ready;
+
+            if (playBtn) {
+                playBtn.innerHTML = `<i class="fas fa-${statusInfo.icon}"></i>`;
+                playBtn.disabled = status === 'loading';
+            }
+
+            if (audioStatus) {
+                audioStatus.innerHTML = statusInfo.text;
+                audioStatus.style.color = statusInfo.color;
+            }
+        }
+
+        // MODIFIED: startInterview function - thêm outline vào request
+        async function startInterview() {
+            showLoading(true);
+            updateStatus('processing', 'Đang bắt đầu phỏng vấn...');
+
+            // Lấy thông tin từ form
+            candidate = document.getElementById("candidateInput").value || candidate;
+            topic = document.getElementById("topicInput").value || topic;
+            // outline đã được update từ UI
+
+            try {
+                const requestData = {
+                    candidate: candidate,
+                    topic: topic
+                };
+
+                // NEW: Thêm outline nếu có
+                if (outline.length > 0) {
+                    requestData.outline = outline;
+                }
+
+                const res = await fetch("/start", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(requestData)
+                });
+                const data = await res.json();
+
+                currentQuestion = data.question;
+
+                // Cập nhật UI
+                document.getElementById("question").innerHTML = `<i class="fas fa-robot"></i> ${currentQuestion}`;
+                document.getElementById("candidateName").textContent = candidate;
+                document.getElementById("interviewTopic").textContent = topic;
+                document.getElementById("candidateLevel").textContent = data.level || 'Đang xác định';
+
+                // NEW: Hiển thị outline trong info card
+                if (outline.length > 0) {
+                    document.getElementById("outlineInfo").innerHTML = outline.join(', ');
+                    document.getElementById("outlineInfoContainer").style.display = 'block';
+                } else {
+                    document.getElementById("outlineInfoContainer").style.display = 'none';
+                }
+
+                // Hiển thị audio controls nếu có audio
+                if (data.audio_url) {
+                    showAudioControls(data.audio_url);
+                    if (autoPlayEnabled) {
+                        setTimeout(() => playQuestionAudio(data.audio_url), 500);
+                    }
+                }
+
+                // Ẩn setup card, hiện các card khác
+                showCard('setupCard', false);
+                showCard('infoCard', true);
+                showCard('questionCard', true);
+                showCard('answerCard', true);
+
+                updateStatus('interviewing', 'Đang phỏng vấn');
+                startTimer();
+
+            } catch (error) {
+                console.error('Error starting interview:', error);
+                updateStatus('error', 'Lỗi kết nối');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Các function khác giữ nguyên...
+        async function submitAnswer() {
+            const answer = document.getElementById("answer").value.trim();
+            if (!answer) {
+                alert("Vui lòng nhập câu trả lời!");
+                return;
+            }
+
+            stopAudio();
+            showLoading(true);
+            updateStatus('processing', 'Đang chấm điểm...');
+
+            try {
+                const res = await fetch("/answer", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({candidate, answer})
+                });
+                const data = await res.json();
+
+                if (data.finished) {
+                    document.getElementById("result").innerHTML = generateSummaryHTML(data.summary);
+                    showCard('questionCard', false);
+                    showCard('answerCard', false);
+                    showCard('resultCard', true);
+                    hideAudioControls();
+                    updateStatus('completed', 'Hoàn thành');
+                    stopTimer();
+                    document.getElementById('resetSection').style.display = 'block';
+                } else {
+                    document.getElementById("result").innerHTML = generateScoreHTML(data.score, data.analysis);
+                    currentQuestion = data.next_question;
+                    document.getElementById("question").innerHTML = `<i class="fas fa-robot"></i> ${currentQuestion}`;
+                    document.getElementById("answer").value = "";
+
+                    if (data.audio_url) {
+                        showAudioControls(data.audio_url);
+                        if (autoPlayEnabled) {
+                            setTimeout(() => playQuestionAudio(data.audio_url), 1000);
+                        }
+                    }
+
+                    showCard('resultCard', true);
+                    setTimeout(() => {
+                        showCard('resultCard', false);
+                    }, 3000);
+
+                    updateStatus('interviewing', 'Đang phỏng vấn');
+                    resetTimer();
+                }
+
+            } catch (error) {
+                console.error('Error submitting answer:', error);
+                updateStatus('error', 'Lỗi kết nối');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Các utility functions khác giữ nguyên...
+        function showAudioControls(audioUrl) {
+            const questionCard = document.getElementById('questionCard');
+
+            const existingControls = questionCard.querySelector('.audio-controls');
+            if (existingControls) {
+                existingControls.remove();
+            }
+
+            const audioControls = document.createElement('div');
+            audioControls.className = 'audio-controls';
+            audioControls.id = 'audioControls';
+            audioControls.innerHTML = `
+                <div class="audio-player">
+                    <button id="playBtn" class="btn-audio" onclick="toggleAudioPlayback()">
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button class="btn-audio" onclick="stopAudio()">
+                        <i class="fas fa-stop"></i>
+                    </button>
+                    <span id="audioStatus" class="audio-status">Sẵn sàng</span>
+                </div>
+                <div class="audio-settings">
+                    <button id="autoPlayBtn" class="btn btn-secondary ${autoPlayEnabled ? 'active' : ''}" onclick="toggleAutoPlay()">
+                        <i class="fas fa-${autoPlayEnabled ? 'volume-up' : 'volume-mute'}"></i>
+                        ${autoPlayEnabled ? 'Tự động phát' : 'Tắt âm thanh'}
+                    </button>
+                </div>
+            `;
+
+            questionCard.querySelector('.card-body').appendChild(audioControls);
+            audioControls.dataset.audioUrl = audioUrl;
+            updateAudioStatus('ready');
+        }
+
+        function hideAudioControls() {
+            const audioControls = document.getElementById('audioControls');
+            if (audioControls) {
+                audioControls.remove();
+            }
+            stopAudio();
+        }
+
+        function generateScoreHTML(score, analysis) {
+            const scoreClass = score >= 7 ? 'score-good' : score >= 4 ? 'score-average' : 'score-poor';
+            return `
+                <div class="score-result">
+                    <div class="score-display">
+                        <div class="score-number ${scoreClass}">${score}/10</div>
+                        <div class="score-bar">
+                            <div class="score-fill ${scoreClass}" style="width: ${score * 10}%"></div>
+                        </div>
+                    </div>
+                    <div class="score-analysis">
+                        <i class="fas fa-comment-alt"></i>
+                        ${analysis}
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateSummaryHTML(summary) {
+            let historyHTML = '';
+            if (summary.question_history) {
+                historyHTML = summary.question_history.map((q, i) => `
+                    <div class="question-history-item">
+                        <h4><i class="fas fa-question-circle"></i> Câu ${q.question_number}</h4>
+                        <div class="difficulty-badge difficulty-${q.difficulty}">${q.difficulty.replace('_', ' ').toUpperCase()}</div>
+                        <p class="question-text">${q.question}</p>
+                        <p class="answer-text"><strong>Trả lời:</strong> ${q.answer}</p>
+                        <div class="question-score">
+                            <span class="score-badge">${q.score}/10</span>
+                            <span class="analysis-text">${q.analysis}</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            return `
+                <div class="interview-summary">
+                    <div class="summary-header">
+                        <h3><i class="fas fa-trophy"></i> Kết quả cuối cùng</h3>
+                        <div class="final-score ${summary.interview_stats?.final_score >= 7 ? 'score-good' : summary.interview_stats?.final_score >= 4 ? 'score-average' : 'score-poor'}">
+                            ${summary.interview_stats?.final_score?.toFixed(1) || 'N/A'}/10
+                        </div>
+                    </div>
+                    <div class="summary-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Tổng câu hỏi:</span>
+                            <span class="stat-value">${summary.interview_stats?.total_questions || 0}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Chủ đề:</span>
+                            <span class="stat-value">${summary.interview_stats?.topic || topic}</span>
+                        </div>
+                    </div>
+                    <div class="question-history">
+                        <h4><i class="fas fa-history"></i> Lịch sử câu hỏi</h4>
+                        ${historyHTML}
+                    </div>
+                </div>
+            `;
+        }
+
+        function showLoading(show) {
+            const overlay = document.getElementById('loadingOverlay');
+            if (show) {
+                overlay.style.display = 'flex';
+                overlay.classList.add('fade-in');
+            } else {
+                overlay.style.display = 'none';
+                overlay.classList.remove('fade-in');
+            }
+        }
+
+        function showCard(cardId, show = true) {
+            const card = document.getElementById(cardId);
+            if (card) {
+                card.style.display = show ? 'block' : 'none';
+            }
+        }
+
+        function updateStatus(type, message) {
+            const statusBadge = document.getElementById('statusBadge');
+            statusBadge.innerHTML = `<span class="status-dot"></span>${message}`;
+            statusBadge.className = `status-badge status-${type}`;
+        }
+
+        function clearAnswer() {
+            document.getElementById("answer").value = "";
+        }
+
+        // MODIFIED: resetInterview - reset outline
+        function resetInterview() {
+            stopAudio();
+            hideAudioControls();
+            outline = []; // NEW: Reset outline
+            updateOutlineTags(); // NEW: Update outline tags
+            showCard('setupCard', true);
+            showCard('infoCard', false);
+            showCard('questionCard', false);
+            showCard('answerCard', false);
+            showCard('resultCard', false);
+            document.getElementById('resetSection').style.display = 'none';
+            updateStatus('ready', 'Sẵn sàng');
+            stopTimer();
+        }
+
+        // Timer functions (giữ nguyên)
+        let timerInterval = null;
+        let startTime = null;
+
+        function startTimer() {
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+
+        function updateTimer() {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            document.getElementById('timerText').textContent =
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function resetTimer() {
+            startTime = Date.now();
+        }
+
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        async function testTTS() {
+            try {
+                const response = await fetch('/test-tts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        text: 'Xin chào, đây là bài test text-to-speech của hệ thống phỏng vấn AI.',
+                        lang: 'vi'
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    playQuestionAudio(data.audio_url);
+                    console.log('TTS test successful:', data);
+                } else {
+                    console.error('TTS test failed:', data.error);
+                }
+            } catch (error) {
+                console.error('Error testing TTS:', error);
+            }
+        }
+
+        // NEW: Event listeners for when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Setup quick outlines when topic changes
+            document.getElementById('topicInput').addEventListener('change', setupQuickOutlines);
+
+            // Setup enter key for outline input
+            document.getElementById('outlineInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    addOutlineItem();
+                    e.preventDefault();
+                }
+            });
+
+            // Initialize quick outlines
+            setupQuickOutlines();
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <span>AI Interview System</span>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="testTTS()" title="Test âm thanh">
+                        <i class="fas fa-volume-up"></i>
+                    </button>
+                    <div class="status-badge" id="statusBadge">
+                        <span class="status-dot"></span>
+                        Sẵn sàng
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Setup Card -->
+            <div class="card setup-card" id="setupCard">
+                <div class="card-header">
+                    <h2><i class="fas fa-user-tie"></i> Thông tin ứng viên</h2>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="candidateInput">Tên ứng viên:</label>
+                        <input type="text" id="candidateInput" class="form-control" placeholder="Nhập tên ứng viên..." value="Phạm Văn Nam,QTKD2">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="topicInput">Chủ đề phỏng vấn:</label>
+                        <select id="topicInput" class="form-control">
+                            <option value="Kiểu dữ liệu trong Java">Kiểu dữ liệu trong Java</option>
+                            <option value="OOP trong Java">OOP trong Java</option>
+                            <option value="Collection Framework">Collection Framework</option>
+                            <option value="Exception Handling">Exception Handling</option>
+                            <option value="Multithreading">Multithreading</option>
+                        </select>
+                    </div>
+
+                    <!-- NEW: Outline Section -->
+                    <div class="form-group">
+                        <label for="outlineInput">Outline chi tiết (tùy chọn):</label>
+                        <div class="outline-input-container">
+                            <input type="text" id="outlineInput" class="form-control" placeholder="Nhập outline item và nhấn Enter...">
+                            <button type="button" class="btn btn-outline" onclick="addOutlineItem()">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                        <div id="outlineTags" class="outline-tags"></div>
+                        <small class="form-text">
+                            <i class="fas fa-info-circle"></i>
+                            Outline giúp hệ thống tạo câu hỏi chi tiết và toàn diện hơn
+                        </small>
+                    </div>
+
+                    <!-- NEW: Quick Outline Section -->
+                    <div id="quickOutlines" class="quick-outlines"></div>
+
+                    <button class="btn btn-primary btn-start" onclick="startInterview()">
+                        <i class="fas fa-play"></i>
+                        Bắt đầu phỏng vấn
+                    </button>
+                </div>
+            </div>
+
+            <!-- Info Card - MODIFIED to show outline -->
+            <div class="card info-card" id="infoCard" style="display: none;">
+                <div class="card-header">
+                    <h3><i class="fas fa-info-circle"></i> Thông tin phỏng vấn</h3>
+                </div>
+                <div class="card-body">
+                    <p><strong>Ứng viên:</strong> <span id="candidateName"></span></p>
+                    <p><strong>Chủ đề:</strong> <span id="interviewTopic"></span></p>
+                    <p><strong>Độ khó hiện tại:</strong> <span id="candidateLevel"></span></p>
+                    <!-- NEW: Show outline if exists -->
+                    <div id="outlineInfoContainer" style="display: none;">
+                        <p><strong>Outline:</strong> <span id="outlineInfo"></span></p>
+                    </div>
+                    <p><strong>Thời gian:</strong> <span id="timerText">00:00</span></p>
+                </div>
+            </div>
+
+            <!-- Question Card -->
+            <div class="card question-card" id="questionCard" style="display: none;">
+                <div class="card-header">
+                    <h3><i class="fas fa-question"></i> Câu hỏi</h3>
+                </div>
+                <div class="card-body">
+                    <div id="question" class="question-text"></div>
+                </div>
+            </div>
+
+            <!-- Answer Card -->
+            <div class="card answer-card" id="answerCard" style="display: none;">
+                <div class="card-header">
+                    <h3><i class="fas fa-keyboard"></i> Câu trả lời của bạn</h3>
+                </div>
+                <div class="card-body">
+                    <textarea id="answer" class="form-control" rows="4" placeholder="Nhập câu trả lời..."></textarea>
+                    <div class="answer-actions">
+                        <button class="btn btn-success" onclick="submitAnswer()">
+                            <i class="fas fa-paper-plane"></i> Gửi
+                        </button>
+                        <button class="btn btn-secondary" onclick="clearAnswer()">
+                            <i class="fas fa-eraser"></i> Xóa
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Result Card -->
+            <div class="card result-card" id="resultCard" style="display: none;">
+                <div class="card-header">
+                    <h3><i class="fas fa-chart-line"></i> Kết quả</h3>
+                </div>
+                <div class="card-body">
+                    <div id="result"></div>
+                </div>
+            </div>
+
+            <!-- Reset Section -->
+            <div id="resetSection" style="display: none; text-align: center; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="resetInterview()">
+                    <i class="fas fa-redo"></i> Phỏng vấn lại
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <div class="loading-text">Đang xử lý...</div>
+    </div>
+</body>
+</html>
